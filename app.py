@@ -85,3 +85,9 @@ def distance_post(payload: ZipPair):
 def distance_get(zip1: str = Query(...), zip2: str = Query(...), units: Optional[str] = Query("miles")):
     payload = ZipPair(zip1=zip1, zip2=zip2, units=units)
     return distance_post(payload)
+
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "FastAPI running"}
+
+
