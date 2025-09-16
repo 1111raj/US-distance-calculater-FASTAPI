@@ -1,9 +1,10 @@
-# app.py
+
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 import pgeocode
 import math
-from typing import Optional
+from typing import Optional, Tuple
+import pandas as pd
 
 app = FastAPI(title="ZIP Distance (Haversine)", version="1.0")
 
@@ -14,16 +15,34 @@ class ZipPair(BaseModel):
     zip2: str
     units: Optional[str] = "miles"  # "miles" or "km"
 
-def lookup_latlon(zip_code: str):
+def lookup_latlon(zip_code: str) -> Tuple[float, float]:
     zip_code = (zip_code or "").strip()
     if not zip_code:
         raise HTTPException(status_code=400, detail="ZIP code is empty")
+
     zip5 = zip_code[:5]
     info = nomi.query_postal_code(zip5)
-    # pgeocode returns NaN for missing lat/lon
-    if info is None or math.isnan(info.latitude) or math.isnan(info.longitude):
+
+    # If pgeocode returns None or missing lat/lon, raise 404
+    if info is None:
         raise HTTPException(status_code=404, detail=f"ZIP code not found: {zip_code}")
-    return float(info.latitude), float(info.longitude)
+
+    # info is typically a pandas Series — robustly extract latitude/longitude
+    try:
+        lat = info.get("latitude") if hasattr(info, "get") else getattr(info, "latitude", None)
+        lon = info.get("longitude") if hasattr(info, "get") else getattr(info, "longitude", None)
+    except Exception:
+        lat = getattr(info, "latitude", None)
+        lon = getattr(info, "longitude", None)
+
+    # Use pandas.isna to cover both None and NaN
+    if pd.isna(lat) or pd.isna(lon):
+        raise HTTPException(status_code=404, detail=f"ZIP code not found or has no coordinates: {zip_code}")
+
+    try:
+        return float(lat), float(lon)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=500, detail=f"Failed to parse coordinates for ZIP: {zip_code}")
 
 def haversine_km(lat1, lon1, lat2, lon2):
     # returns distance in kilometers
